@@ -5,50 +5,61 @@ import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import javax.swing.*;
 import java.awt.*;
+import java.util.TreeMap;
 
+class FunctionProcessor {
+    private TreeMap<Double, Double> functionPoints = new TreeMap<>();
+
+    public void calculateAnalytical(double start, double end, double step) {
+        functionPoints.clear();
+        for (double x = start; x <= end; x += step) {
+            double y = Math.exp(x) * Math.sin(x);
+            functionPoints.put(x, y);
+        }
+    }
+
+    public TreeMap<Double, Double> getPoints() {
+        return functionPoints;
+    }
+}
+// граф інтерфейс
 public class FuncPlotter extends JFrame {
+    private FunctionProcessor processor = new FunctionProcessor();
     private ChartPanel chartPanel;
-    private JTextField formulaField = new JTextField("exp(x)*sin(x)", 15);
-    private JButton loadButton = new JButton("Відкрити файл");
 
     public FuncPlotter() {
-        setTitle("Аналіз функцій - Step 3 (Refactored)");
+        setupUI();
+        updateGraph();
+    }
+
+    private void setupUI() {
+        setTitle("Аналіз функцій - Step 2: Refactored");
         setSize(900, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        JPanel controlPanel = new JPanel();
-        controlPanel.add(new JLabel("f(x) = "));
-        controlPanel.add(formulaField);
-        controlPanel.add(loadButton);
-
-        chartPanel = createChartPanel();
+        JPanel topPanel = new JPanel();
+        JButton loadCsvBtn = new JButton("Завантажити з Excel");
+        topPanel.add(loadCsvBtn);
 
         setLayout(new BorderLayout());
-        add(controlPanel, BorderLayout.NORTH);
-        add(chartPanel, BorderLayout.CENTER);
+        add(topPanel, BorderLayout.NORTH);
     }
 
-    private ChartPanel createChartPanel() {
-        XYSeries seriesF = new XYSeries("f(x)");
-        XYSeries seriesD = new XYSeries("f'(x)");
+    private void updateGraph() {
+        processor.calculateAnalytical(-3, 3, 0.1);
 
-        for (double x = -Math.PI; x <= Math.PI; x += 0.1) {
-            double y = Math.exp(x) * Math.sin(x);
-            double dy = Math.exp(x) * (Math.sin(x) + Math.cos(x)); // Похідна
-            seriesF.add(x, y);
-            seriesD.add(x, dy);
-        }
-
-        XYSeriesCollection dataset = new XYSeriesCollection();
-        dataset.addSeries(seriesF);
-        dataset.addSeries(seriesD);
+        XYSeries series = new XYSeries("f(x)");
+        processor.getPoints().forEach(series::add);
 
         JFreeChart chart = ChartFactory.createXYLineChart(
-                "Графік функції та її похідної", "Вісь X", "Вісь Y",
-                dataset
+                "Результат рефакторингу", "X", "Y",
+                new XYSeriesCollection(series)
         );
 
-        return new ChartPanel(chart);
+        if (chartPanel != null) remove(chartPanel);
+        chartPanel = new ChartPanel(chart);
+        add(chartPanel, BorderLayout.CENTER);
+        revalidate();
     }
 
     public static void main(String[] args) {
