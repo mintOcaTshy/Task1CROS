@@ -5,52 +5,76 @@ import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
-
 import javax.swing.*;
 import java.awt.*;
-import java.io.File;
-import java.util.Scanner;
 import java.util.TreeMap;
-import java.util.TreeSet;
 
 class FunctionLogic {
     private TreeMap<Double, Double> funcPoints = new TreeMap<>();
     private TreeMap<Double, Double> derivPoints = new TreeMap<>();
-    private TreeSet<Double> xValues = new TreeSet<>();
 
-    public void loadFromCSV(File file) throws Exception {
-        funcPoints.clear();
-        derivPoints.clear();
-        xValues.clear();
-        try (Scanner scanner = new Scanner(file)) {
-            while (scanner.hasNextLine()) {
-                String line = scanner.nextLine().trim();
-                if (line.isEmpty()) continue;
-                String[] parts = line.split("[,;]");
-                if (parts.length >= 2) {
-                    double x = Double.parseDouble(parts[0].trim().replace(',', '.'));
-                    double y = Double.parseDouble(parts[1].trim().replace(',', '.'));
-                    funcPoints.put(x, y);
-                    xValues.add(x);
+    public double eval(final String str, double xVal, double aVal) {
+        return new Object() {
+            int pos = -1, ch;
+            void nextChar() { ch = (++pos < str.length()) ? str.charAt(pos) : -1; }
+            boolean eat(int charToEat) {
+                while (ch == ' ') nextChar();
+                if (ch == charToEat) { nextChar(); return true; }
+                return false;
+            }
+            double parse() { nextChar(); double x = parseExpression(); return x; }
+            double parseExpression() {
+                double x = parseTerm();
+                for (;;) {
+                    if (eat('+')) x += parseTerm(); else if (eat('-')) x -= parseTerm(); else return x;
                 }
             }
-        }
+            double parseTerm() {
+                double x = parseFactor();
+                for (;;) {
+                    if (eat('*')) x *= parseFactor(); else if (eat('/')) x /= parseFactor(); else return x;
+                }
+            }
+            double parseFactor() {
+                if (eat('+')) return parseFactor(); if (eat('-')) return -parseFactor();
+                double x; int startPos = this.pos;
+                if (eat('(')) { x = parseExpression(); eat(')'); }
+                else if ((ch >= '0' && ch <= '9') || ch == '.') {
+                    while ((ch >= '0' && ch <= '9') || ch == '.') nextChar();
+                    x = Double.parseDouble(str.substring(startPos, this.pos));
+                } else if (ch >= 'a' && ch <= 'z') {
+                    while (ch >= 'a' && ch <= 'z') nextChar();
+                    String func = str.substring(startPos, this.pos);
+                    if (func.equals("x")) x = xVal;
+                    else if (func.equals("a")) x = aVal;
+                    else {
+                        x = parseFactor();
+                        if (func.equals("sin")) x = Math.sin(x);
+                        else if (func.equals("cos")) x = Math.cos(x);
+                        else if (func.equals("exp")) x = Math.exp(x);
+                        else if (func.equals("sqrt")) x = Math.sqrt(x);
+                        else throw new RuntimeException("Unknown: " + func);
+                    }
+                } else throw new RuntimeException("Unexpected: " + (char)ch);
+                if (eat('^')) x = Math.pow(x, parseFactor());
+                return x;
+            }
+        }.parse();
     }
 
-    public void calculateAnalytical(double a, double start, double end, double step) {
+    public void calculate(String formula, double a, double start, double end, double step) {
         funcPoints.clear();
         derivPoints.clear();
-        xValues.clear();
         double h = 0.0001;
 
         for (double x = start; x <= end; x += step) {
-            double y = Math.exp(-a * x) * Math.sin(x);
+            try {
+                double y = eval(formula, x, a);
+                double dy = (eval(formula, x + h, a) - eval(formula, x - h, a)) / (2 * h);
 
-            double dy_analyt = Math.exp(-a * x) * (Math.cos(x) - a * Math.sin(x));
-
-            funcPoints.put(x, y);
-            derivPoints.put(x, dy_analyt);
-            xValues.add(x);
+                funcPoints.put(x, y);
+                derivPoints.put(x, dy);
+            } catch (Exception ignored) {}
         }
     }
 
@@ -61,58 +85,53 @@ class FunctionLogic {
 public class FuncPlotter extends JFrame {
     private FunctionLogic logic = new FunctionLogic();
     private ChartPanel chartPanel;
-    private JTextField paramAField = new JTextField("1.0", 5);
+
+    private JTextField formulaField = new JTextField("exp(-a*x^2)*sin(x)", 20);
+    private JTextField paramA = new JTextField("0.5", 5);
 
     public FuncPlotter() {
         setupUI();
-        logic.calculateAnalytical(1.0, -3.14, 3.14, 0.1);
-        refreshGraph();
+        updatePlot();
     }
 
     private void setupUI() {
-        setTitle("Аналіз функцій - Step 8: Final");
+        setTitle("Аналізатор функцій - Без помилок компіляції");
         setSize(1000, 700);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
 
-        JPanel controlPanel = new JPanel();
-        JButton btnLoad = new JButton("Відкрити CSV");
-        JButton btnCalc = new JButton("Побудувати (a)");
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        Font mainFont = new Font("Arial", Font.BOLD, 14);
 
-        controlPanel.add(new JLabel("Параметр a:"));
-        controlPanel.add(paramAField);
-        controlPanel.add(btnCalc);
-        controlPanel.add(new JLabel(" | "));
-        controlPanel.add(btnLoad);
+        controls.add(new JLabel("f(x) = "));
+        formulaField.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        controls.add(formulaField);
 
-        btnCalc.addActionListener(e -> {
-            try {
-                double a = Double.parseDouble(paramAField.getText());
-                logic.calculateAnalytical(a, -3.14, 3.14, 0.1);
-                refreshGraph();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Введіть числове значення!");
-            }
-        });
+        controls.add(new JLabel("  a = "));
+        controls.add(paramA);
 
-        btnLoad.addActionListener(e -> {
-            JFileChooser jfc = new JFileChooser();
-            if (jfc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                try {
-                    logic.loadFromCSV(jfc.getSelectedFile());
-                    refreshGraph();
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "Помилка формату CSV!");
-                }
-            }
-        });
+        JButton btnPlot = new JButton("Побудувати");
+        btnPlot.setFont(mainFont);
+        btnPlot.addActionListener(e -> updatePlot());
+        controls.add(btnPlot);
 
         setLayout(new BorderLayout());
-        add(controlPanel, BorderLayout.NORTH);
+        add(controls, BorderLayout.NORTH);
+    }
+
+    private void updatePlot() {
+        try {
+            logic.calculate(formulaField.getText(),
+                    Double.parseDouble(paramA.getText()),
+                    -5.0, 5.0, 0.1);
+            refreshGraph();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Помилка у формулі!");
+        }
     }
 
     private void refreshGraph() {
-        XYSeries s1 = new XYSeries("Функція f(x)");
-        XYSeries s2 = new XYSeries("Похідна f'(x)");
+        XYSeries s1 = new XYSeries("f(x)");
+        XYSeries s2 = new XYSeries("f'(x)");
 
         logic.getFuncPoints().forEach(s1::add);
         logic.getDerivPoints().forEach(s2::add);
@@ -121,12 +140,22 @@ public class FuncPlotter extends JFrame {
         dataset.addSeries(s1);
         dataset.addSeries(s2);
 
-        JFreeChart chart = ChartFactory.createXYLineChart("Аналіз функції", "X", "Y", dataset);
+        JFreeChart chart = ChartFactory.createXYLineChart("Результат аналізу", "X", "Y", dataset);
+
+        chart.setAntiAlias(true);
+        chart.setTextAntiAlias(true);
+        chart.getTitle().setFont(new Font("Arial", Font.BOLD, 20));
 
         XYPlot plot = chart.getXYPlot();
+        plot.setBackgroundPaint(Color.WHITE);
+        plot.setDomainGridlinePaint(Color.LIGHT_GRAY);
+        plot.setRangeGridlinePaint(Color.LIGHT_GRAY);
+
         XYLineAndShapeRenderer renderer = new XYLineAndShapeRenderer(true, false);
         renderer.setSeriesPaint(0, Color.RED);
+        renderer.setSeriesStroke(0, new BasicStroke(2.5f)); // Чіткі товсті лінії
         renderer.setSeriesPaint(1, Color.BLUE);
+        renderer.setSeriesStroke(1, new BasicStroke(2.5f));
         plot.setRenderer(renderer);
 
         if (chartPanel != null) remove(chartPanel);
@@ -137,6 +166,7 @@ public class FuncPlotter extends JFrame {
     }
 
     public static void main(String[] args) {
+        try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch(Exception ignored) {}
         SwingUtilities.invokeLater(() -> new FuncPlotter().setVisible(true));
     }
 }
