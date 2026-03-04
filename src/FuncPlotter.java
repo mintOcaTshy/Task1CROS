@@ -6,6 +6,7 @@ import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.TreeMap;
 
@@ -22,7 +23,7 @@ class FunctionLogic {
                 if (ch == charToEat) { nextChar(); return true; }
                 return false;
             }
-            double parse() { nextChar(); double x = parseExpression(); return x; }
+            double parse() { nextChar(); return parseExpression(); }
             double parseExpression() {
                 double x = parseTerm();
                 for (;;) {
@@ -52,10 +53,8 @@ class FunctionLogic {
                         if (func.equals("sin")) x = Math.sin(x);
                         else if (func.equals("cos")) x = Math.cos(x);
                         else if (func.equals("exp")) x = Math.exp(x);
-                        else if (func.equals("sqrt")) x = Math.sqrt(x);
-                        else throw new RuntimeException("Unknown: " + func);
                     }
-                } else throw new RuntimeException("Unexpected: " + (char)ch);
+                } else throw new RuntimeException("Error");
                 if (eat('^')) x = Math.pow(x, parseFactor());
                 return x;
             }
@@ -66,12 +65,10 @@ class FunctionLogic {
         funcPoints.clear();
         derivPoints.clear();
         double h = 0.0001;
-
         for (double x = start; x <= end; x += step) {
             try {
                 double y = eval(formula, x, a);
                 double dy = (eval(formula, x + h, a) - eval(formula, x - h, a)) / (2 * h);
-
                 funcPoints.put(x, y);
                 derivPoints.put(x, dy);
             } catch (Exception ignored) {}
@@ -86,8 +83,11 @@ public class FuncPlotter extends JFrame {
     private FunctionLogic logic = new FunctionLogic();
     private ChartPanel chartPanel;
 
-    private JTextField formulaField = new JTextField("exp(-a*x^2)*sin(x)", 20);
-    private JTextField paramA = new JTextField("0.5", 5);
+    private JTextField formulaField = new JTextField("exp(-a*x^2)*sin(x)", 15);
+    private JTextField paramA = new JTextField("0.5", 4);
+    private JTextField startField = new JTextField("-5", 4);
+    private JTextField endField = new JTextField("5", 4);
+    private JTextField stepField = new JTextField("0.1", 4);
 
     public FuncPlotter() {
         setupUI();
@@ -95,22 +95,25 @@ public class FuncPlotter extends JFrame {
     }
 
     private void setupUI() {
-        setTitle("Аналізатор функцій - Без помилок компіляції");
-        setSize(1000, 700);
+        setTitle("Аналізатор функцій");
+        setSize(1200, 800);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        Font mainFont = new Font("Arial", Font.BOLD, 14);
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
+        controls.setBackground(new Color(240, 240, 240));
+        controls.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
 
-        controls.add(new JLabel("f(x) = "));
-        formulaField.setFont(new Font("Monospaced", Font.PLAIN, 14));
-        controls.add(formulaField);
+        Font labelFont = new Font("Segoe UI", Font.BOLD, 13);
 
-        controls.add(new JLabel("  a = "));
-        controls.add(paramA);
+        addLabeledField(controls, "f(x) =", formulaField, labelFont);
+        addLabeledField(controls, "a =", paramA, labelFont);
+        addLabeledField(controls, "Початок:", startField, labelFont);
+        addLabeledField(controls, "Кінець:", endField, labelFont);
+        addLabeledField(controls, "Крок:", stepField, labelFont);
 
-        JButton btnPlot = new JButton("Побудувати");
-        btnPlot.setFont(mainFont);
+        JButton btnPlot = new JButton("Сформувати");
+        btnPlot.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btnPlot.setBackground(new Color(220, 230, 255));
         btnPlot.addActionListener(e -> updatePlot());
         controls.add(btnPlot);
 
@@ -118,14 +121,24 @@ public class FuncPlotter extends JFrame {
         add(controls, BorderLayout.NORTH);
     }
 
+    private void addLabeledField(JPanel panel, String label, JTextField field, Font font) {
+        JLabel l = new JLabel(label);
+        l.setFont(font);
+        panel.add(l);
+        panel.add(field);
+    }
+
     private void updatePlot() {
         try {
-            logic.calculate(formulaField.getText(),
-                    Double.parseDouble(paramA.getText()),
-                    -5.0, 5.0, 0.1);
+            double a = Double.parseDouble(paramA.getText());
+            double start = Double.parseDouble(startField.getText());
+            double end = Double.parseDouble(endField.getText());
+            double step = Double.parseDouble(stepField.getText());
+
+            logic.calculate(formulaField.getText(), a, start, end, step);
             refreshGraph();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Помилка у формулі!");
+            JOptionPane.showMessageDialog(this, "Помилка вводу параметрів!");
         }
     }
 
@@ -137,32 +150,32 @@ public class FuncPlotter extends JFrame {
         logic.getDerivPoints().forEach(s2::add);
 
         XYSeriesCollection dataset = new XYSeriesCollection();
-        dataset.addSeries(s1);
-        dataset.addSeries(s2);
+        dataset.addSeries(s1); dataset.addSeries(s2);
 
-        JFreeChart chart = ChartFactory.createXYLineChart("Результат аналізу", "X", "Y", dataset);
+        JFreeChart chart = ChartFactory.createXYLineChart("Аналіз функції", "X", "Y", dataset);
 
         chart.setAntiAlias(true);
         chart.setTextAntiAlias(true);
-        chart.getTitle().setFont(new Font("Arial", Font.BOLD, 20));
+        chart.getRenderingHints().put(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
         XYPlot plot = chart.getXYPlot();
         plot.setBackgroundPaint(Color.WHITE);
         plot.setDomainGridlinePaint(Color.LIGHT_GRAY);
         plot.setRangeGridlinePaint(Color.LIGHT_GRAY);
+        plot.setOutlineVisible(false);
 
         XYLineAndShapeRenderer renderer = new XYLineAndShapeRenderer(true, false);
-        renderer.setSeriesPaint(0, Color.RED);
-        renderer.setSeriesStroke(0, new BasicStroke(2.5f)); // Чіткі товсті лінії
-        renderer.setSeriesPaint(1, Color.BLUE);
-        renderer.setSeriesStroke(1, new BasicStroke(2.5f));
+        renderer.setSeriesPaint(0, new Color(220, 50, 50)); // Червона функція
+        renderer.setSeriesStroke(0, new BasicStroke(2.5f));
+        renderer.setSeriesPaint(1, new Color(50, 50, 220)); // Синя похідна
+        renderer.setSeriesStroke(1, new BasicStroke(2.0f));
         plot.setRenderer(renderer);
 
         if (chartPanel != null) remove(chartPanel);
         chartPanel = new ChartPanel(chart);
+        chartPanel.setBorder(new EmptyBorder(20, 20, 20, 20)); // Додаємо внутрішні поля
         add(chartPanel, BorderLayout.CENTER);
-        revalidate();
-        repaint();
+        revalidate(); repaint();
     }
 
     public static void main(String[] args) {
